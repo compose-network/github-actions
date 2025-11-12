@@ -1,144 +1,193 @@
-# Security Configuration Guide
+# Security Model
 
-## Overview
+## Why No External Actions?
 
-This repository provides composite actions designed to work with **restricted GitHub runners** that only allow actions from trusted repositories. This prevents security vulnerabilities where malicious actors could execute unauthorized code.
+GitHub's action restrictions are **recursive** - they check not only the action you call, but also every action used internally.
 
-## Threat Model
+### The Problem
 
-### Risks Without Restrictions
-
-Without proper restrictions, a malicious actor with PR access could:
-
-1. **Checkout malicious repositories**: Use `actions/checkout` to clone their own repo with malicious code
-2. **Run arbitrary commands**: Execute bash commands or scripts from untrusted sources
-3. **Access secrets**: Steal sensitive environment variables and secrets
-4. **Modify build artifacts**: Inject backdoors into Docker images or binaries
-5. **Escalate privileges**: Exploit runner permissions to access other resources
-
-### How This Repo Mitigates Risks
-
-By using ONLY actions from `compose-network/github-actions`, you ensure:
-
-- ✅ All code is reviewed and trusted
-- ✅ No external dependencies that could be compromised
-- ✅ Git operations are controlled (checkout only from approved repos)
-- ✅ All commands are predefined and auditable
-- ✅ No arbitrary script execution from PR contributors
-- ✅ **Repository URLs are hardcoded** - Users can only specify branches, not repository URLs
-  - OP Geth: `https://github.com/compose-network/op-geth.git`
-  - Publisher: `https://github.com/compose-network/publisher.git`
-  - Contracts: `https://github.com/compose-network/contracts.git`
-
-## Configuring Restricted Runners
-
-### Option 1: GitHub Enterprise with Action Restrictions
-
-If using GitHub Enterprise, configure allowed actions:
-
-1. Go to your organization/repository Settings
-2. Navigate to Actions → General
-3. Under "Actions permissions", select "Allow select actions and reusable workflows"
-4. Add to the allow list:
-   ```
-   compose-network/github-actions@*
-   ```
-
-### Option 2: Self-Hosted Runner with Network Restrictions
-
-Configure your self-hosted runner to only access specific repositories:
-
-```bash
-# Example: Use firewall rules to restrict GitHub API access
-# Only allow connections to compose-network/github-actions
-
-iptables -A OUTPUT -d github.com -p tcp --dport 443 -m string \
-  --string "compose-network/github-actions" --algo bm -j ACCEPT
-iptables -A OUTPUT -d github.com -p tcp --dport 443 -j REJECT
+If your workflow uses:
+```yaml
+uses: compose-network/github-actions/actions/local-testnet@v0.2.0
 ```
 
-### Option 3: Custom Runner with Action Validation
-
-Implement a pre-execution hook that validates actions:
-
-```bash
-#!/bin/bash
-# validate-action.sh - Runner pre-execution hook
-
-WORKFLOW_FILE=$1
-
-# Extract all 'uses:' lines from workflow
-ACTIONS=$(grep -oP "uses:\s*\K[^\s]+" "$WORKFLOW_FILE")
-
-# Check if all actions are from allowed repo
-for action in $ACTIONS; do
-  if [[ ! $action =~ ^compose-network/github-actions ]]; then
-    echo "ERROR: Unauthorized action detected: $action"
-    exit 1
-  fi
-done
-
-echo "All actions validated successfully"
+And that action internally uses:
+```yaml
+uses: actions/checkout@v4
+uses: actions/setup-go@v6
+uses: docker/setup-buildx-action@v3
 ```
 
-## Using Secure Workflows
+GitHub will **block** them if you set:
+```
+Allowed actions: compose-network/github-actions@*
+```
 
-### Recommended: Secure PR Comment Trigger
+**You cannot wrap external actions to bypass security restrictions** - this is by design.
 
-Use the `secure-pr-comment-trigger.yml` example which uses ONLY actions from this repo:
+### The Solution
+
+Replace ALL external actions with native shell commands:
+
+| External Action | Replaced With |
+|----------------|---------------|
+| `actions/checkout@v4` | Native `git clone` |
+| `actions/setup-go@v6` | Direct download from go.dev |
+| `docker/setup-buildx-action@v3` | Native `docker buildx` commands |
+
+Now you can set the strictest restrictions and it works!
+
+## Security Benefits
+
+### 1. Hardcoded Repository URLs
+
+Repository URLs are hardcoded in the actions and cannot be overridden:
 
 ```yaml
-# ✅ SECURE - All steps use compose-network/github-actions
-- uses: compose-network/github-actions/actions/add-reaction@main
-- uses: compose-network/github-actions/actions/get-pr-info@main
-- uses: compose-network/github-actions/actions/checkout-pr@main
-- uses: compose-network/github-actions/actions/local-testnet@main
+# In actions/local-testnet/action.yml
+--publisher-url=https://github.com/compose-network/publisher.git
+--op-geth-url=https://github.com/compose-network/op-geth.git
 ```
 
-### Avoid: Standard Workflows with External Actions
-
+Users can only specify branch names:
 ```yaml
-# ❌ INSECURE - Uses external actions that could be compromised
-- uses: actions/checkout@v4              # External dependency
-- uses: peter-evans/create-or-update-comment@v4  # External dependency
+with:
+  publisher-branch: 'my-branch'  # ✅ Allowed
+  publisher-url: 'https://...'   # ❌ Not possible
 ```
 
-## Available Secure Actions
+**Prevents:** Attackers from cloning malicious repositories.
 
-All actions use only native shell commands and have been audited for security:
+### 2. Zero External Dependencies
 
-| Action | Commands Used | Purpose |
-|--------|---------------|---------|
-| `add-reaction` | `curl` | Add emoji reaction to comments |
-| `get-pr-info` | `curl`, `jq` | Fetch PR branch and SHA |
-| `checkout-pr` | `git` | Clone and checkout PR code |
-| `local-testnet` | `docker`, `curl`, `go`, `git` | Run testnet and tests |
+All actions use only native commands:
+- `bash`, `git`, `curl`, `wget`, `docker`, `jq`
 
-## Security Checklist
+No third-party GitHub Actions are used.
 
-Before deploying workflows with restricted runners:
+**Prevents:**
+- Supply chain attacks through compromised actions
+- Automatic updates breaking your workflows
+- External action dependencies being removed
 
-- [ ] Configure runner to only allow `compose-network/github-actions` actions
-- [ ] Use `secure-pr-comment-trigger.yml` example as template
-- [ ] Review all workflow files to ensure no external actions are used
-- [ ] Test workflow in isolated environment first
-- [ ] Monitor workflow logs for unauthorized access attempts
-- [ ] Regularly update to latest action versions
-- [ ] Audit changes to this repository before deploying updates
+### 3. Tagged Versions Only
 
-## Reporting Security Issues
+Configure repositories to only allow tagged versions:
 
-If you discover a security vulnerability in these actions:
+```
+Settings → Actions → General
+→ Allowed actions: compose-network/github-actions@*
+```
 
-1. **DO NOT** create a public issue
-2. Email security@compose.network with details
-3. Include:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fix (if available)
+Then in runner group:
+```
+Workflow access: Selected workflows
+→ owner/repo/.github/workflows/*.yml@refs/tags/*
+```
 
-## Additional Resources
+**Prevents:**
+- Workflows running from untested branches
+- Automatic updates to actions
+- Code injection via branch manipulation
 
-- [GitHub Actions Security Best Practices](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
-- [Restricting Actions in Enterprise](https://docs.github.com/en/enterprise-cloud@latest/admin/policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise)
+## Configuration
+
+### For Repositories Using These Actions
+
+```
+Settings → Actions → General → Actions permissions
+→ Allow select actions and reusable workflows
+→ Allowed actions: compose-network/github-actions@*
+```
+
+This restricts the repository to ONLY use actions from `compose-network/github-actions`.
+
+### For Runner Groups (Restricted Runners)
+
+```
+Settings → Actions → Runner groups → public-isolated
+
+Repository access: Selected repositories
+  → compose-network/publisher
+  → compose-network/op-geth
+
+Workflow access: Selected workflows
+  → compose-network/publisher/.github/workflows/*.yml@refs/tags/*
+  → compose-network/op-geth/.github/workflows/*.yml@refs/tags/*
+```
+
+This ensures:
+- Only specific repositories can use the runner
+- Only specific workflow files can run
+- Only tagged releases (not branches) can trigger workflows
+
+## What This Prevents
+
+With this configuration, malicious actors **cannot**:
+
+❌ Use `actions/checkout` to clone their own malicious repository
+❌ Use any external third-party actions
+❌ Override repository URLs to point to malicious code
+❌ Run workflows from branches (only tags allowed)
+❌ Create new unauthorized workflow files
+❌ Use the runner from unauthorized repositories
+
+## Attack Scenarios Blocked
+
+### Scenario 1: Malicious Checkout
+**Attack:** PR contributor tries to checkout their malicious repo
+```yaml
+- uses: actions/checkout@v4
+  with:
+    repository: attacker/malicious-code
+```
+**Blocked by:** `actions/checkout` not in allowed actions list
+
+### Scenario 2: Custom Repository URLs
+**Attack:** Try to override repository URLs
+```yaml
+- uses: compose-network/github-actions/actions/local-testnet@v0.2.0
+  with:
+    publisher-url: 'https://github.com/attacker/publisher.git'
+```
+**Blocked by:** Input doesn't exist - URLs are hardcoded
+
+### Scenario 3: Branch Injection
+**Attack:** Modify code in `main` branch to inject malicious code
+**Blocked by:** Workflows can only run from `@refs/tags/*`, not branches
+
+### Scenario 4: Compromised External Action
+**Attack:** `actions/checkout@v4` gets compromised by attackers
+**Blocked by:** We don't use external actions - only native commands
+
+## Trade-offs
+
+### Advantages
+✅ Maximum security - zero external dependencies
+✅ No supply chain risk
+✅ Fully auditable code
+✅ Works with strictest restrictions
+
+### Disadvantages
+⚠️ More maintenance - must update native commands manually
+⚠️ More verbose - more lines of code than using actions
+⚠️ Platform-specific - commands assume Linux environment
+
+## Recommended Configuration
+
+**Step 1:** Repository Settings
+```
+compose-network/github-actions@*
+```
+
+**Step 2:** Runner Group
+```
+Workflows: *.yml@refs/tags/*
+```
+
+**Step 3:** Workflow File
+```yaml
+uses: compose-network/github-actions/actions/local-testnet@v0.2.0
+```
+
+This gives you **maximum security** with minimal complexity.

@@ -73,10 +73,16 @@ runs:
           }'
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Inject enhanced GitHub environment variables
-      uses: rlespinasse/github-slug-action@v5
+      shell: bash
+      run: |
+        # Check if docker buildx is available
+        if ! docker buildx version &> /dev/null; then
+          echo "Setting up Docker Buildx..."
+          docker buildx create --use --name builder --driver docker-container || true
+          docker buildx inspect builder --bootstrap
+        else
+          echo "Docker Buildx already available"
+        fi
 
     - name: Run local testnet
       shell: bash
@@ -112,15 +118,41 @@ runs:
              --op-geth-branch=${{ inputs.op-geth-branch }}
 
     - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: '1.25.0'
+      shell: bash
+      run: |
+        # Check if Go is already installed and at the correct version
+        if command -v go &> /dev/null; then
+          CURRENT_GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+          echo "Go is already installed: $CURRENT_GO_VERSION"
+          if [[ "$CURRENT_GO_VERSION" == "1.25.0" ]]; then
+            echo "Correct Go version already installed"
+            exit 0
+          fi
+        fi
+
+        # Download and install Go 1.25.0
+        echo "Installing Go 1.25.0..."
+        wget -q https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
+        sudo rm -rf /usr/local/go
+        sudo tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
+        rm go1.25.0.linux-amd64.tar.gz
+
+        # Add to PATH
+        echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+        export PATH="/usr/local/go/bin:$PATH"
+
+        # Verify installation
+        go version
 
     - name: Checkout dome test repository
-      uses: actions/checkout@v4
-      with:
-        repository: compose-network/dome
-        path: dome
+      shell: bash
+      run: |
+        # Clone the dome repository
+        echo "Cloning compose-network/dome repository..."
+        git clone --depth 1 https://github.com/compose-network/dome.git dome
+        cd dome
+        echo "Repository cloned successfully"
+        git log -1 --oneline
 
     - name: Parse test pattern from Makefile
       id: parse-tests
