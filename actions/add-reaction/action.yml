@@ -1,0 +1,27 @@
+name: 'Add Reaction'
+description: 'Add a reaction to a GitHub comment'
+author: 'Compose Network'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+  comment-id:
+    description: 'Comment ID to add reaction to'
+    required: true
+  reaction:
+    description: 'Reaction to add (e.g., rocket, eyes, heart, hooray, confused, +1, -1, laugh)'
+    required: false
+    default: 'rocket'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Add reaction to comment
+      shell: bash
+      run: |
+        curl -s -X POST \
+          -H "Authorization: token ${{ inputs.github-token }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}/issues/comments/${{ inputs.comment-id }}/reactions" \
+          -d "{\"content\": \"${{ inputs.reaction }}\"}"

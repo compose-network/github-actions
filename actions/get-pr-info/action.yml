@@ -1,0 +1,34 @@
+name: 'Get PR Info'
+description: 'Get pull request information including branch name and commit SHA'
+author: 'Compose Network'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+  pr-number:
+    description: 'Pull request number'
+    required: true
+
+outputs:
+  branch:
+    description: 'PR branch name'
+    value: ${{ steps.pr-info.outputs.branch }}
+  sha:
+    description: 'PR commit SHA'
+    value: ${{ steps.pr-info.outputs.sha }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get PR info
+      id: pr-info
+      shell: bash
+      run: |
+        PR_DATA=$(curl -s -H "Authorization: token ${{ inputs.github-token }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}/pulls/${{ inputs.pr-number }}")
+        BRANCH_NAME=$(echo "$PR_DATA" | jq -r '.head.ref')
+        COMMIT_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')
+        echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+        echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"

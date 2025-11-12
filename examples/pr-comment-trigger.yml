@@ -1,0 +1,74 @@
+name: Local Testnet on PR Comment
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  run-testnet:
+    runs-on: public-isolated
+    # Only run if the comment is on a PR, contains /test, and user is org member
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/test') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER')
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - name: Add reaction to comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ github.event.comment.id }}
+          reactions: 'rocket'
+
+      - name: Get PR info
+        id: pr-info
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}")
+          BRANCH_NAME=$(echo "$PR_DATA" | jq -r '.head.ref')
+          COMMIT_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.issue.number }}/head
+
+      - name: Run local testnet
+        uses: compose-network/github-actions/actions/local-testnet@main
+        with:
+          # Required: Repository branches
+          op-geth-branch: 'stage'  # Or use ${{ steps.pr-info.outputs.branch }} for PR branch
+          publisher-branch: ${{ steps.pr-info.outputs.branch }}
+
+          # Optional: Override Docker image tag
+          # local-testnet-image-tag: 'v1.2.3'
+
+          # PR information for status updates
+          pr-number: ${{ github.event.issue.number }}
+          pr-sha: ${{ steps.pr-info.outputs.sha }}
+
+          # GitHub token
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # L1 configuration
+          l1-chain-id: ${{ secrets.LOCAL_TESTNET_L1_CHAIN_ID }}
+          l1-cl-url: ${{ secrets.LOCAL_TESTNET_L1_CL }}
+          l1-el-url: ${{ secrets.LOCAL_TESTNET_L1_EL }}
+
+          # Wallet configuration
+          wallet-address: ${{ secrets.LOCAL_TESTNET_WALLET_ADDRESS }}
+          wallet-private-key: ${{ secrets.LOCAL_TESTNET_WALLET_PK }}
+          coordinator-private-key: ${{ secrets.LOCAL_TESTNET_COORDINATOR_PK }}
+
+          # Verifier configuration
+          verifier-wallet: ${{ secrets.LOCAL_TESTNET_VERIFIER_WALLET }}
+          verifier-key: ${{ secrets.LOCAL_TESTNET_VERIFIER_PK }}

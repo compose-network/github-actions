@@ -1,0 +1,34 @@
+name: 'Checkout PR'
+description: 'Checkout pull request code using git commands'
+author: 'Compose Network'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+  pr-number:
+    description: 'Pull request number'
+    required: true
+  repository:
+    description: 'Repository in format owner/repo'
+    required: false
+    default: ${{ github.repository }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout PR code
+      shell: bash
+      run: |
+        # Configure git
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Clone the repository
+        git clone "https://x-access-token:${{ inputs.github-token }}@github.com/${{ inputs.repository }}.git" .
+
+        # Fetch the PR
+        git fetch origin pull/${{ inputs.pr-number }}/head:pr-${{ inputs.pr-number }}
+
+        # Checkout the PR branch
+        git checkout pr-${{ inputs.pr-number }}
