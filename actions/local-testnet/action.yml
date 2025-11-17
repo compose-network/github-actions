@@ -13,6 +13,10 @@ inputs:
     description: 'Local testnet Docker image tag'
     required: false
     default: 'latest'
+  go-version:
+    description: 'Go version to install (e.g., 1.25.0)'
+    required: false
+    default: '1.25.0'
   pr-number:
     description: 'Pull request number (for status updates)'
     required: false
@@ -120,26 +124,30 @@ runs:
     - name: Set up Go
       shell: bash
       run: |
+        GO_VERSION="${{ inputs.go-version }}"
+
         # Check if Go is already installed and at the correct version
         if command -v go &> /dev/null; then
           CURRENT_GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
           echo "Go is already installed: $CURRENT_GO_VERSION"
-          if [[ "$CURRENT_GO_VERSION" == "1.25.0" ]]; then
+          if [[ "$CURRENT_GO_VERSION" == "$GO_VERSION" ]]; then
             echo "Correct Go version already installed"
             exit 0
           fi
         fi
 
-        # Download and install Go 1.25.0
-        echo "Installing Go 1.25.0..."
-        curl -s -L -O https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
-        sudo rm -rf /usr/local/go
-        sudo tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
-        rm go1.25.0.linux-amd64.tar.gz
+        # Download and install Go to user directory
+        GO_INSTALL_DIR="$HOME/go-install"
+        echo "Installing Go $GO_VERSION to $GO_INSTALL_DIR..."
+        curl -s -L -O "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+        rm -rf "$GO_INSTALL_DIR"
+        mkdir -p "$GO_INSTALL_DIR"
+        tar -C "$GO_INSTALL_DIR" -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
+        rm "go${GO_VERSION}.linux-amd64.tar.gz"
 
         # Add to PATH
-        echo "/usr/local/go/bin" >> "$GITHUB_PATH"
-        export PATH="/usr/local/go/bin:$PATH"
+        echo "$GO_INSTALL_DIR/go/bin" >> "$GITHUB_PATH"
+        export PATH="$GO_INSTALL_DIR/go/bin:$PATH"
 
         # Verify installation
         go version

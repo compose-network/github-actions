@@ -86,6 +86,7 @@ Configure in your repository:
 | `op-geth-branch` | Yes | - | OP Geth branch name |
 | `publisher-branch` | Yes | - | Publisher branch name |
 | `local-testnet-image-tag` | No | `latest` | Docker image tag |
+| `go-version` | No | `1.25.0` | Go version to install |
 | `pr-number` | No | `0` | PR number for status updates |
 | `pr-sha` | No | - | PR SHA for status updates |
 | `github-token` | Yes | - | GitHub token |
