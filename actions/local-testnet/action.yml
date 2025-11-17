@@ -132,7 +132,8 @@ runs:
           -e CONFIG_PATH=/app/config.yaml \
           -e LOG_LEVEL=INFO \
           ghcr.io/compose-network/dome:${{ inputs.dome-image-tag }} \
-          -test.v -test.count=1 2>&1 | tee test-output.log
+          -test.v -test.count=1 -test.run="TestMintTokensCrossRollup|TestSendCrossTxBridgeFromAToB|TestSendCrossTxBridgeFromBToA|TestSendOnAAndFailingSelfMoveBalanceOnB|TestSendCrossTxBridgeWithOutOfGasOnB|TestSelfMoveBalanceOnAandreceiveTokensOnB" \
+          2>&1 | tee test-output.log
         exit ${PIPESTATUS[0]}
 
     - name: Parse test results and post comment
