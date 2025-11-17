@@ -107,7 +107,7 @@ runs:
              --dispute-network-name=hoodi \
              --dispute-owner-address=${{ inputs.wallet-address }} \
              --dispute-proposer-address=${{ inputs.wallet-address }} \
-             --dispute-admin-address=${{ inputs.wallet-address }} \
+             --dispute-guardian-address=${{ inputs.wallet-address }} \
              --dispute-verifier-address=${{ inputs.verifier-wallet }} \
              --dispute-aggregation-vkey=${{ inputs.verifier-key }} \
              --compose-contracts-url=https://github.com/compose-network/contracts.git \
