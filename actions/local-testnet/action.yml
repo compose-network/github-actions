@@ -17,6 +17,10 @@ inputs:
     description: 'Dome Docker image tag'
     required: false
     default: 'latest'
+  startup-wait-seconds:
+    description: 'Time to wait (in seconds) after starting testnet before running smoke tests'
+    required: false
+    default: '60'
   pr-number:
     description: 'Pull request number (for status updates)'
     required: false
@@ -120,6 +124,13 @@ runs:
              --publisher-branch=${{ inputs.publisher-branch }} \
              --op-geth-url=https://github.com/compose-network/op-geth.git \
              --op-geth-branch=${{ inputs.op-geth-branch }}
+
+    - name: Wait for testnet startup
+      shell: bash
+      run: |
+        echo "Waiting ${{ inputs.startup-wait-seconds }} seconds for testnet to fully start up..."
+        sleep ${{ inputs.startup-wait-seconds }}
+        echo "Wait complete, proceeding to smoke tests"
 
     - name: Run smoke tests
       id: smoke-tests
