@@ -13,6 +13,14 @@ inputs:
     description: 'Local testnet Docker image tag'
     required: false
     default: 'latest'
+  dome-image-tag:
+    description: 'Dome Docker image tag'
+    required: false
+    default: 'latest'
+  startup-wait-seconds:
+    description: 'Time to wait (in seconds) after starting testnet before running smoke tests'
+    required: false
+    default: '60'
   pr-number:
     description: 'Pull request number (for status updates)'
     required: false
@@ -117,70 +125,31 @@ runs:
              --op-geth-url=https://github.com/compose-network/op-geth.git \
              --op-geth-branch=${{ inputs.op-geth-branch }}
 
-    - name: Set up Go
+    - name: Wait for testnet startup
       shell: bash
       run: |
-        # Check if Go is already installed and at the correct version
-        if command -v go &> /dev/null; then
-          CURRENT_GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-          echo "Go is already installed: $CURRENT_GO_VERSION"
-          if [[ "$CURRENT_GO_VERSION" == "1.25.0" ]]; then
-            echo "Correct Go version already installed"
-            exit 0
-          fi
-        fi
-
-        # Download and install Go 1.25.0
-        echo "Installing Go 1.25.0..."
-        curl -s -L -O https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
-        sudo rm -rf /usr/local/go
-        sudo tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
-        rm go1.25.0.linux-amd64.tar.gz
-
-        # Add to PATH
-        echo "/usr/local/go/bin" >> "$GITHUB_PATH"
-        export PATH="/usr/local/go/bin:$PATH"
-
-        # Verify installation
-        go version
-
-    - name: Checkout dome test repository
-      shell: bash
-      run: |
-        # Clone the dome repository
-        echo "Cloning compose-network/dome repository..."
-        git clone --depth 1 https://github.com/compose-network/dome.git dome
-        cd dome
-        echo "Repository cloned successfully"
-        git log -1 --oneline
-
-    - name: Parse test pattern from Makefile
-      id: parse-tests
-      shell: bash
-      working-directory: dome
-      run: |
-        # Extract the test pattern from the smoke-test target in the Makefile
-        TEST_PATTERN=$(grep -A 5 '^smoke-test:' Makefile | grep -o '\-test\.run="[^"]*"' | sed 's/-test\.run="\(.*\)"/\1/')
-        echo "pattern=$TEST_PATTERN" >> "$GITHUB_OUTPUT"
-        echo "Extracted test pattern: $TEST_PATTERN"
+        echo "Waiting ${{ inputs.startup-wait-seconds }} seconds for testnet to fully start up..."
+        sleep ${{ inputs.startup-wait-seconds }}
+        echo "Wait complete, proceeding to smoke tests"
 
     - name: Run smoke tests
       id: smoke-tests
       continue-on-error: true
       shell: bash
-      working-directory: dome
       run: |
-        cp ../output.yaml configs/config.yaml
-        mkdir -p bin && go test -c ./test/ -o bin/dome
-        echo "Running smoke tests with INFO log level..."
-        echo "Test pattern from Makefile: ${{ steps.parse-tests.outputs.pattern }}"
-        LOG_LEVEL=INFO bin/dome -test.v -test.count=1 -test.run="${{ steps.parse-tests.outputs.pattern }}" 2>&1 | tee test-output.log
+        echo "Running smoke tests with dome Docker image..."
+        docker run --rm --network=host \
+          -v "$(pwd)/output.yaml:/app/config.yaml" \
+          -e CONFIG_PATH=/app/config.yaml \
+          -e LOG_LEVEL=INFO \
+          ghcr.io/compose-network/dome:${{ inputs.dome-image-tag }} \
+          -test.v -test.count=1 -test.run="TestMintTokensCrossRollup|TestSendCrossTxBridgeFromAToB|TestSendCrossTxBridgeFromBToA|TestSendOnAAndFailingSelfMoveBalanceOnB|TestSendCrossTxBridgeWithOutOfGasOnB|TestSelfMoveBalanceOnAandreceiveTokensOnB" \
+          2>&1 | tee test-output.log
         exit ${PIPESTATUS[0]}
 
     - name: Parse test results and post comment
       if: always() && steps.smoke-tests.outcome != 'skipped' && inputs.pr-number != '0'
       shell: bash
-      working-directory: dome
       run: |
         # Parse test results from the log file
         if [ -f test-output.log ]; then
