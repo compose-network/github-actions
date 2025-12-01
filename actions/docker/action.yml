@@ -70,14 +70,15 @@ runs:
         BUILD_CMD="$BUILD_CMD --file ${{ inputs.dockerfile-path }}"
         BUILD_CMD="$BUILD_CMD --tag ${IMAGE_NAME}:${IMAGE_TAG}"
         BUILD_CMD="$BUILD_CMD --tag ${IMAGE_NAME}:latest"
-        BUILD_CMD="$BUILD_CMD --annotation \"index:org.opencontainers.image.description=${{ inputs.image-description }}\""
-        BUILD_CMD="$BUILD_CMD --annotation \"index:org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}\""
-        BUILD_CMD="$BUILD_CMD --annotation \"index:org.opencontainers.image.revision=${{ github.sha }}\""
+
         BUILD_CMD="$BUILD_CMD --label org.opencontainers.image.description=\"${{ inputs.image-description }}\""
         BUILD_CMD="$BUILD_CMD --label org.opencontainers.image.source=\"${{ github.server_url }}/${{ github.repository }}\""
         BUILD_CMD="$BUILD_CMD --label org.opencontainers.image.revision=\"${{ github.sha }}\""
 
         if [ "${{ inputs.with-push }}" = "true" ]; then
+          BUILD_CMD="$BUILD_CMD --annotation \"index:org.opencontainers.image.description=${{ inputs.image-description }}\""
+          BUILD_CMD="$BUILD_CMD --annotation \"index:org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}\""
+          BUILD_CMD="$BUILD_CMD --annotation \"index:org.opencontainers.image.revision=${{ github.sha }}\""
           BUILD_CMD="$BUILD_CMD --push"
         else
           BUILD_CMD="$BUILD_CMD --load"
