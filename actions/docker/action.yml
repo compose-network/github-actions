@@ -1,0 +1,94 @@
+name: 'Docker Build and Push'
+description: 'Build and push Docker images using native docker commands'
+author: 'Compose Network'
+
+inputs:
+  with-push:
+    description: "Determines if to push docker image to an image registry"
+    required: false
+    default: 'false'
+  image-tag:
+    description: "Docker image tag"
+    required: false
+    default: 'latest'
+  image-architectures:
+    description: "Comma separated list of architectures"
+    required: false
+    default: 'linux/amd64,linux/arm64'
+  github-token:
+    description: 'GitHub token for registry authentication'
+    required: true
+  dockerfile-path:
+    description: 'Path to Dockerfile'
+    required: false
+    default: 'Dockerfile'
+  build-context:
+    description: 'Build context path'
+    required: false
+    default: '.'
+  image-description:
+    description: 'Docker image description'
+    required: false
+    default: 'Docker image built by Compose Network'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Docker Buildx
+      shell: bash
+      run: |
+        if ! docker buildx version &> /dev/null; then
+          echo "Setting up Docker Buildx..."
+          docker buildx create --use --name builder --driver docker-container || true
+          docker buildx inspect builder --bootstrap
+        else
+          echo "Docker Buildx already available"
+          docker buildx create --use --name builder --driver docker-container 2>/dev/null || docker buildx use builder || true
+        fi
+
+    - name: Log in to GitHub Container Registry
+      shell: bash
+      run: |
+        echo "Logging in to ghcr.io..."
+        echo "${{ inputs.github-token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+    - name: Build Docker image
+      shell: bash
+      run: |
+        set -e
+        IMAGE_REGISTRY="ghcr.io"
+        IMAGE_NAME="${IMAGE_REGISTRY}/${{ github.repository }}"
+        IMAGE_TAG="${{ inputs.image-tag }}"
+
+        echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
+        echo "Architectures: ${{ inputs.image-architectures }}"
+        echo "Push enabled: ${{ inputs.with-push }}"
+
+        # Prepare build command
+        BUILD_CMD="docker buildx build"
+        BUILD_CMD="$BUILD_CMD --platform ${{ inputs.image-architectures }}"
+        BUILD_CMD="$BUILD_CMD --file ${{ inputs.dockerfile-path }}"
+        BUILD_CMD="$BUILD_CMD --tag ${IMAGE_NAME}:${IMAGE_TAG}"
+        BUILD_CMD="$BUILD_CMD --tag ${IMAGE_NAME}:latest"
+        BUILD_CMD="$BUILD_CMD --label org.opencontainers.image.description=\"${{ inputs.image-description }}\""
+        BUILD_CMD="$BUILD_CMD --label org.opencontainers.image.source=\"${{ github.server_url }}/${{ github.repository }}\""
+        BUILD_CMD="$BUILD_CMD --label org.opencontainers.image.revision=\"${{ github.sha }}\""
+
+        if [ "${{ inputs.with-push }}" = "true" ]; then
+          BUILD_CMD="$BUILD_CMD --push"
+        else
+          BUILD_CMD="$BUILD_CMD --load"
+        fi
+
+        BUILD_CMD="$BUILD_CMD ${{ inputs.build-context }}"
+
+        echo "Executing: $BUILD_CMD"
+        eval $BUILD_CMD
+
+        echo "Docker image built successfully!"
+        if [ "${{ inputs.with-push }}" = "true" ]; then
+          echo "Image pushed to: ${IMAGE_NAME}:${IMAGE_TAG}"
+          echo "Image pushed to: ${IMAGE_NAME}:latest"
+        else
+          echo "Image loaded locally (push disabled)"
+        fi
