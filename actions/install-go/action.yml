@@ -1,0 +1,68 @@
+name: 'Install Go'
+description: 'Install Golang using raw commands without pre-created actions'
+author: 'Compose Network'
+
+inputs:
+  go-version:
+    description: 'Go version to install (e.g., 1.21.5, 1.22.0)'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Go
+      shell: bash
+      run: |
+        GO_VERSION="${{ inputs.go-version }}"
+
+        # Detect OS and architecture
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+
+        # Map architecture names
+        case "$ARCH" in
+          x86_64)
+            ARCH="amd64"
+            ;;
+          aarch64|arm64)
+            ARCH="arm64"
+            ;;
+          armv6l)
+            ARCH="armv6l"
+            ;;
+          *)
+            echo "Unsupported architecture: $ARCH"
+            exit 1
+            ;;
+        esac
+
+        # Construct download URL
+        GO_TARBALL="go${GO_VERSION}.${OS}-${ARCH}.tar.gz"
+        GO_URL="https://go.dev/dl/${GO_TARBALL}"
+
+        echo "Downloading Go ${GO_VERSION} for ${OS}-${ARCH}..."
+
+        # Download Go tarball
+        curl -fsSL -o "/tmp/${GO_TARBALL}" "${GO_URL}"
+
+        # Remove existing Go installation if present
+        sudo rm -rf /usr/local/go
+
+        # Extract Go to /usr/local
+        sudo tar -C /usr/local -xzf "/tmp/${GO_TARBALL}"
+
+        # Clean up downloaded tarball
+        rm "/tmp/${GO_TARBALL}"
+
+        # Add Go to PATH for current and future steps
+        echo "/usr/local/go/bin" >> $GITHUB_PATH
+        echo "$HOME/go/bin" >> $GITHUB_PATH
+
+        # Set GOPATH and GOROOT environment variables
+        echo "GOROOT=/usr/local/go" >> $GITHUB_ENV
+        echo "GOPATH=$HOME/go" >> $GITHUB_ENV
+
+        # Verify installation
+        /usr/local/go/bin/go version
+
+        echo "Go ${GO_VERSION} installed successfully!"
